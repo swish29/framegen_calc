@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Estimate the FPS you see and the FPS your game renders with frame generation, from measured or modelled GPU cost in milliseconds."
+    />
+    <title>Frame Generation FPS calculator</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <script>
+      // Set the light or dark theme before first paint: the saved choice, else the system setting.
+      try {
+        const saved = localStorage.getItem('fgcalc-theme');
+        const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="title">
+        <h1>Frame Generation FPS calculator</h1>
+        <p class="subtitle">How much frame generation raises the FPS you see, and how much it lowers the FPS your game renders.</p>
+      </div>
+      <div class="actions">
+        <span id="status" class="status" role="status" aria-live="polite"></span>
+        <button type="button" id="copy-link" class="btn">Copy link</button>
+        <button type="button" id="reset" class="btn">Reset</button>
+        <button type="button" id="theme" class="btn">Theme: System</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="inputs" aria-label="Inputs">
+        <div class="field" data-key="baseFPS">
+          <div class="field-head">
+            <label for="in-baseFPS">Base FPS</label>
+            <span class="tip-wrap">
+              <button type="button" class="tip" aria-label="About base FPS" aria-describedby="tip-baseFPS">?</button>
+              <span role="tooltip" id="tip-baseFPS">
+                Frame rate with frame generation off. Measure it in the same scene and settings you plan to use with it on.
+              </span>
+            </span>
+            <span class="num-wrap">
+              <input id="in-baseFPS" type="number" inputmode="decimal" aria-describedby="meta-baseFPS" />
+              <span class="unit">FPS</span>
+            </span>
+          </div>
+          <input id="range-baseFPS" type="range" aria-label="Base FPS" />
+          <p class="meta" id="meta-baseFPS"></p>
+        </div>
+
+        <fieldset class="source">
+          <legend>Frame generation cost</legend>
+          <div class="segmented segmented-wide">
+            <label><input type="radio" name="source" value="measured" /><span>Measured data</span></label>
+            <label><input type="radio" name="source" value="model" /><span>Model</span></label>
+            <label><input type="radio" name="source" value="mine" /><span>Your numbers</span></label>
+          </div>
+
+          <div class="panel" id="panel-measured">
+            <label class="select-field">Technology <select id="preset-tech"></select></label>
+            <label class="select-field">Hardware <select id="preset-hw"></select></label>
+            <label class="select-field">Scenario <select id="preset-scn"></select></label>
+            <p class="source-line" id="source-line"></p>
+            <details class="source-details" id="source-details">
+              <summary>How it was measured</summary>
+              <p id="source-note"></p>
+            </details>
+          </div>
+
+          <div class="panel" id="panel-model">
+            <div class="field" data-key="sharedOverheadMs">
+              <div class="field-head">
+                <label for="in-sharedOverheadMs">Shared cost</label>
+                <span class="tip-wrap">
+                  <button type="button" class="tip" aria-label="About shared cost" aria-describedby="tip-sharedOverheadMs">?</button>
+                  <span role="tooltip" id="tip-sharedOverheadMs">
+                    GPU work done once per rendered frame, such as motion estimation. Every frame generated from that rendered
+                    frame reuses it, so the first generated frame costs no more than the others.
+                  </span>
+                </span>
+                <span class="num-wrap">
+                  <input id="in-sharedOverheadMs" type="number" inputmode="decimal" aria-describedby="meta-sharedOverheadMs" />
+                  <span class="unit">ms</span>
+                </span>
+              </div>
+              <input id="range-sharedOverheadMs" type="range" aria-label="Shared cost" />
+              <p class="meta" id="meta-sharedOverheadMs">Paid once per rendered frame.</p>
+            </div>
+            <div class="field" data-key="perGeneratedFrameMs">
+              <div class="field-head">
+                <label for="in-perGeneratedFrameMs">Cost per generated frame</label>
+                <span class="tip-wrap">
+                  <button type="button" class="tip" aria-label="About cost per generated frame" aria-describedby="tip-perGeneratedFrameMs">?</button>
+                  <span role="tooltip" id="tip-perGeneratedFrameMs">
+                    Extra GPU work for each generated frame. ×2 generates one frame per rendered frame, and ×4 generates three.
+                  </span>
+                </span>
+                <span class="num-wrap">
+                  <input id="in-perGeneratedFrameMs" type="number" inputmode="decimal" aria-describedby="meta-perGeneratedFrameMs" />
+                  <span class="unit">ms</span>
+                </span>
+              </div>
+              <input id="range-perGeneratedFrameMs" type="range" aria-label="Cost per generated frame" />
+              <p class="meta" id="meta-perGeneratedFrameMs">Paid once for each generated frame.</p>
+            </div>
+          </div>
+
+          <div class="panel" id="panel-mine">
+            <div class="segmented segmented-small" role="group" aria-label="Enter values as">
+              <label><input type="radio" name="manual-unit" value="ms" checked /><span>Overhead in ms</span></label>
+              <label><input type="radio" name="manual-unit" value="fps" /><span>Displayed FPS</span></label>
+            </div>
+            <div class="manual-grid" id="manual">
+              <label class="manual-field"><span>×2</span><span class="num-wrap"><input type="number" inputmode="decimal" data-m="2" /><span class="unit">ms</span></span><span class="conv" data-conv="2"></span></label>
+              <label class="manual-field"><span>×3</span><span class="num-wrap"><input type="number" inputmode="decimal" data-m="3" /><span class="unit">ms</span></span><span class="conv" data-conv="3"></span></label>
+              <label class="manual-field"><span>×4</span><span class="num-wrap"><input type="number" inputmode="decimal" data-m="4" /><span class="unit">ms</span></span><span class="conv" data-conv="4"></span></label>
+              <label class="manual-field"><span>×5</span><span class="num-wrap"><input type="number" inputmode="decimal" data-m="5" /><span class="unit">ms</span></span><span class="conv" data-conv="5"></span></label>
+            </div>
+            <p class="hint" id="unit-hint"></p>
+            <button type="button" class="btn btn-small" id="fill-manual">Start from model values</button>
+          </div>
+
+          <div class="fit" id="fit" aria-live="polite" hidden></div>
+        </fieldset>
+      </section>
+
+      <section class="results" aria-labelledby="results-heading">
+        <h2 id="results-heading">Results</h2>
+        <div class="table-scroll" tabindex="0" role="region" aria-labelledby="results-heading">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th scope="col" class="l">FG</th>
+                <th scope="col" class="l frame-col">One rendered frame, to scale</th>
+                <th scope="col" title="Base FPS × multiplier, with no overhead">Ideal FPS</th>
+                <th scope="col" class="hl" title="Frames shown per second, including generated frames">Displayed FPS</th>
+                <th scope="col" title="Frames the game renders per second with frame generation on">Real FPS</th>
+                <th scope="col" title="Time frame generation adds to each rendered frame">FG overhead</th>
+                <th scope="col" title="Loss in real FPS compared with frame generation off">Real FPS penalty</th>
+                <th scope="col" title="Change in displayed FPS compared with frame generation off">FPS gain</th>
+              </tr>
+            </thead>
+            <tbody id="results-body"></tbody>
+          </table>
+        </div>
+        <p class="frame-key">
+          <span class="key key-game"></span>Game render time <span class="key key-fg"></span>Frame generation time
+          <span class="key key-tick"></span>Frame on screen
+        </p>
+
+        <div class="chart-head">
+          <h2 id="chart-heading">FPS by multiplier</h2>
+          <div class="legend" id="legend" role="group" aria-label="Show or hide lines"></div>
+        </div>
+        <div class="chart-box">
+          <canvas id="chart" role="img" aria-label="Line chart of ideal, displayed and real FPS for each multiplier. The results table lists the same values."></canvas>
+        </div>
+        <p class="note">
+          These are estimates, not benchmarks. The default values are examples. The calculator doesn't cap FPS to a
+          display's refresh rate.
+        </p>
+      </section>
+    </main>
+
+    <details class="explain">
+      <summary><h2>How the model works</h2></summary>
+      <div class="explain-body">
+        <pre class="eq"><code>frame time      = 1000 / base FPS
+FG overhead(M)  = shared + (M − 1) × per-frame cost, or 0 with FG off
+real frame time = frame time + FG overhead(M)
+real FPS        = 1000 / real frame time
+displayed FPS   = real FPS × M</code></pre>
+
+        <h3>Why the gain is less than ×M</h3>
+        <p>
+          The GPU computes every generated frame. That work adds to the time the game takes to produce each rendered frame,
+          so the game renders fewer real frames. Displayed FPS is M times this lower real FPS, not M times the base FPS. Each
+          higher multiplier adds more work, so each step gains less.
+        </p>
+
+        <h3>Shared and per-frame costs</h3>
+        <p>
+          NVIDIA's <a href="https://research.nvidia.com/labs/adlr/DLSS4/" target="_blank" rel="noopener">DLSS 4 research
+          page</a> splits Multi Frame Generation into two parts. One part runs once for each pair of rendered frames, and its
+          output is reused. The other, much smaller part runs once for each generated frame. So the first generated frame
+          isn't slower than the others. Measured times follow this pattern. The DLSSG for SM86 timings for an RTX 3080 Ti at
+          4K fit 0.80&nbsp;ms + (M − 1) × 1.10&nbsp;ms to within 0.01&nbsp;ms. Other implementations may scale differently,
+          and some use a different network for each multiplier. Your numbers takes a separate value for each multiplier.
+        </p>
+
+        <h3>Why a fixed cost hurts more at high FPS</h3>
+        <p>
+          Overhead is a fixed time, not a percentage. 1.5&nbsp;ms is 2.5&nbsp;% of a 60&nbsp;ms frame at 16.7&nbsp;FPS, but
+          30&nbsp;% of a 5&nbsp;ms frame at 200&nbsp;FPS. A higher base FPS means a shorter frame, so the same overhead takes
+          a larger share of it. The real FPS penalty grows and the displayed FPS gain shrinks.
+        </p>
+
+        <h3>Why real FPS drops while displayed FPS rises</h3>
+        <p>
+          Displayed FPS counts every frame sent to the display, rendered or generated. Real FPS counts only the frames the
+          game simulates and renders. Frame generation makes each real frame take longer, so any overhead above zero puts real
+          FPS below base FPS, even when displayed FPS goes up.
+        </p>
+
+        <h3>GPU time and effective overhead</h3>
+        <p>
+          The calculator needs effective overhead, meaning how much longer each real frame takes. This can differ from how
+          long the frame generation passes run on the GPU. If that work overlaps with rendering, the effective cost is lower.
+          If it competes with rendering for GPU compute or memory bandwidth, the effective cost is higher. Measured data marks
+          which kind each source gives. Enter FPS you measured in Your numbers to include these effects.
+        </p>
+
+        <h3>Displayed FPS is not latency</h3>
+        <p>
+          Generated frames come from rendered frames, so they don't respond to new input. Input latency follows the real frame
+          rate. Interpolation also holds back each rendered frame until the next one is ready, which adds delay. With frame
+          generation on, latency is usually higher than at the same FPS rendered natively, and often higher than with it off.
+        </p>
+
+        <h3>Limits of the estimate</h3>
+        <p>
+          The real cost depends on the GPU, resolution, frame generation version, driver, and the game's own GPU and CPU load.
+          The model ignores frame pacing, refresh-rate caps and VRR. Without a measurement for your setup, use the results to
+          compare trends, not to predict FPS on a specific GPU.
+        </p>
+      </div>
+    </details>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
